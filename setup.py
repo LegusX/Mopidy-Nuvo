@@ -17,10 +17,11 @@ setup(
         'setuptools',
         'Mopidy >= 0.14',
         'Pykka >= 1.1',
+        'pyserial'
     ],
     entry_points={
         'mopidy.ext': [
-            'nuvo = mopidy_nuvo:Extension',
+            'Mopidy-Nuvo = mopidy_nuvo:Extension',
         ],
     },
     classifiers=[

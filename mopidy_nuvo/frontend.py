@@ -1,16 +1,25 @@
 import logging
 import pykka
 
-from mopidy import core
-from .connect import Connection
+from mopidy.core import CoreListener
+from .interface import Interface
 
 logger = logging.getLogger(__name__)
 
-class NuvoFrontend(pykka.ThreadingActor, core.CoreListener):
+class NuvoFrontend(pykka.ThreadingActor, CoreListener):
     def __init__(self, config, core):
-        super(NuvoFrontend, self).__init__()
-        print(config)
+        super().__init__()
+
+        self.config = config
+        logger.info(config["Mopidy-Nuvo"])
         self.core = core
 
-        self.con = Connection(config)
+    def on_start(self):
+        self.interface = Interface(self.config,self.core)
+
+    def on_stop(self):
+        self.interface.stop()
+
+    def on_event(self, name, **data):
+        self.interface.onMopidyEvent(name, **data)
 

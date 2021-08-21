@@ -23,8 +23,10 @@ class Extension(ext.Extension):
     def get_config_schema(self):
         schema = super().get_config_schema()
         # TODO: Comment in and edit, or remove entirely
-        #schema["username"] = config.String()
-        #schema["password"] = config.Secret()
+        schema["source"] = config.Integer(minimum=0,maximum=6)
+        schema["port"] = config.String()
+        schema["disable_extra_sources"] = config.Boolean()
+        schema["autopause"] = config.Boolean()
         return schema
 
     def setup(self, registry):
