@@ -1,6 +1,7 @@
 # This code will be handling most of the connection between Nuvo and Mopidy
 import logging
-import asyncio
+import time
+import socket
 
 from .connect import Connection
 
@@ -14,17 +15,25 @@ class Interface():
 
         self.config = config
         self.core = core
+        self.zones = [False]*20
+
         source = config["Mopidy-Nuvo"]["source"]
 
         self.connection = Connection(config["Mopidy-Nuvo"]["port"])
-        self.connection.listen(self.buttonHandler)
+        self.connection.listen(self.onNuvoEvent)
         self.connection.send(f"SCFG{source}NUVONET0") #Ensure that the system doesn't mark this as a nuvonet source
+
+        nothingPlaying(self.connection, self.config)
+
+        # Get the current on/off states of all zones
+        for x in range(1,20):
+            self.connection.send(f"Z{x}STATUS?")
 
     def onMopidyEvent(self, name, **data):
         if name == 'track_playback_paused':
             paused(self.connection, **data)
         elif name == 'track_playback_ended':
-            ended(self.connection, **data)
+            ended(self.connection, self.core, **data)
         elif name == 'track_playback_resumed':
             resumed(self.connection, **data)
         elif name == 'track_playback_started':
@@ -33,31 +42,41 @@ class Interface():
             seeked(self.connection, **data)
         return
 
-    def buttonHandler(self, button):
-        logger.info(self)
-        logger.info(button)
-        logger.info(self.core.__dir__())
-        if 'PREV' in button:
+    def onNuvoEvent(self, event):
+        if 'PREV' in event:
             self.core.playback.previous()
-        elif 'NEXT' in button:
+        elif 'NEXT' in event:
             self.core.playback.next()
-        elif 'PLAYPAUSE' in button:
-            if self.core.playback.get_state() == 'PLAYING':
+        elif 'PLAYPAUSE' in event:
+            if self.core.playback.get_state().get() == 'playing':
                 self.core.playback.pause()
             else:
                 self.core.playback.resume()
+        elif ',ON' in event:
+            zone = int(event.split(",ON")[0].replace("#Z", "")) # Get the zone number out of the event message
+            self.zones[zone-1] = True
+        elif ',OFF' in event:
+            zone = int(event.split(",OFF")[0].replace("#Z", "")) # Get the zone number out of the event message
+            self.zones[zone-1] = False
 
 
 # Informs the Nuvo system that the track has been paused
 def paused(connection, tl_track, time_position):
+    connection.send(f"S{source}DISPINFO,{round(currentTrackLength/100, 1)},{round(time_position/100, 1)},3")
     return
 
 # Informs the Nuvo system that the track has ended
-def ended(connection, tl_track, time_position):
+def ended(connection, core, config, tl_track, time_position):
+    connection.send(f"S{source}DISPINFO,{round(currentTrackLength/100, 1)},{round(time_position/100, 1)},1")
+    time.sleep(5)
+    # If there is still nothing playing after a couple seconds we'll revert to the no music playing screen
+    if core.playback.get_state().get() == 'stopped':
+        nothingPlaying(connection, config)
     return
 
 # Informs the Nuvo system that the track has resumed
 def resumed(connection, tl_track, time_position):
+    connection.send(f"S{source}DISPINFO,{round(currentTrackLength/100, 1)},{round(time_position/100, 1)},0")
     return
 
 # Informs the Nuvo system that a new track has started
@@ -65,15 +84,14 @@ def started(connection, tl_track):
     global currentTrackLength
     track = tl_track.track
 
-    artistsList = track.artists.union(track.composers).union(track.performers)
-    artists = []
-    for artist in artistsList:
-        artists.append(artist.name)
+    # Combine all the artists into one list
+    artists = track.artists.union(track.composers).union(track.performers)
 
     # Update the title/artist/album
-    connection.send('S{}DISPLINE2"{}"'.format(source, ", ".join(artists)))
-    connection.send('S{}DISPLINE3"{}"'.format(source, track.name))
-    connection.send('S{}DISPLINE1"{}"'.format(source, track.album.name))
+    connection.line(source, 1)
+    connection.line(source, 2, ", ".join(artists))
+    connection.line(source, 3, track.name)
+    connection.line(source, 4, track.album.name)
 
     #Update track status
     connection.send('S{}DISPINFO,{},0,2'.format(source, round(track.length/100), 1))
@@ -87,3 +105,29 @@ def seeked(connection, time_position):
     global currentTrackLength
     connection.send('S{}DISPINFO,{},{},0'.format(source, round(currentTrackLength/100, 1), round(time_position/100, 1)))
     return
+
+# Displays the IP to connect to a web interface like Iris.
+# Useful for the less tech savvy members of a household or for when you can't be bothered to remember the IP.
+def nothingPlaying(connection, config):
+    logger.info(config)
+    connection.line(source, 1)
+    connection.line(source, 2, "There's nothing playing! Go to:")
+
+    connection.line(source, 3, getIP()+":"+str(config["http"]["port"]))
+
+    connection.line(source, 4, "in your web browser to start playing some music!")
+
+    # Set current timestamp to zero because nothing is playing
+    connection.send(f"S{source}DISPINFO,0,0,1")
+
+# Source: https://stackoverflow.com/a/28950776
+def getIP():
+    st = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:       
+        st.connect(('10.255.255.255', 1))
+        IP = st.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        st.close()
+    return IP
