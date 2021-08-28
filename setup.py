@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='Mopidy-Nuvo',
-    version="0.1.0",
+    version="0.2.0",
     url='https://github.com/legusx/mopidy-nuvo',
     license='Apache License, Version 2.0',
     author='Logan Henrie',

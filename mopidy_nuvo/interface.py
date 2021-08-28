@@ -19,7 +19,9 @@ class Interface():
 
         source = config["Mopidy-Nuvo"]["source"]
 
-        self.connection = Connection(config["Mopidy-Nuvo"]["port"])
+        logger.info(config["Mopidy-Nuvo"])
+
+        self.connection = Connection(config["Mopidy-Nuvo"]["port"], config["Mopidy-Nuvo"]["disable_extra_sources"], source)
         self.connection.listen(self.onNuvoEvent)
         self.connection.send(f"SCFG{source}NUVONET0") #Ensure that the system doesn't mark this as a nuvonet source
 
@@ -33,7 +35,7 @@ class Interface():
         if name == 'track_playback_paused':
             paused(self.connection, **data)
         elif name == 'track_playback_ended':
-            ended(self.connection, self.core, **data)
+            ended(self.connection, self.core, self.config, **data)
         elif name == 'track_playback_resumed':
             resumed(self.connection, **data)
         elif name == 'track_playback_started':
@@ -55,9 +57,15 @@ class Interface():
         elif ',ON' in event:
             zone = int(event.split(",ON")[0].replace("#Z", "")) # Get the zone number out of the event message
             self.zones[zone-1] = True
+
+            if self.config["Mopidy-Nuvo"]["autopause"] and self.core.playback.get_state().get() == 'paused':
+                self.core.playback.resume()
         elif ',OFF' in event:
             zone = int(event.split(",OFF")[0].replace("#Z", "")) # Get the zone number out of the event message
             self.zones[zone-1] = False
+            
+            if self.config["Mopidy-Nuvo"]["autopause"] and True not in self.zones:
+                self.core.playback.pause()
 
 
 # Informs the Nuvo system that the track has been paused
@@ -85,7 +93,10 @@ def started(connection, tl_track):
     track = tl_track.track
 
     # Combine all the artists into one list
-    artists = track.artists.union(track.composers).union(track.performers)
+    artistsList = track.artists.union(track.composers).union(track.performers)
+    artists = []
+    for artist in artistsList:
+        artists.append(artist.name)
 
     # Update the title/artist/album
     connection.line(source, 1)
@@ -109,7 +120,6 @@ def seeked(connection, time_position):
 # Displays the IP to connect to a web interface like Iris.
 # Useful for the less tech savvy members of a household or for when you can't be bothered to remember the IP.
 def nothingPlaying(connection, config):
-    logger.info(config)
     connection.line(source, 1)
     connection.line(source, 2, "There's nothing playing! Go to:")
 
