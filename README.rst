@@ -14,7 +14,7 @@ Installation
 
 Install by running::
 
-    python3 -m pip install Mopidy-Nuvo
+   sudo python3 -m pip install Mopidy-Nuvo
 
 See https://mopidy.com/ext/Mopidy-Nuvo/ for alternative installation methods.
 
